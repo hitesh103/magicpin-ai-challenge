@@ -475,7 +475,7 @@ OUTPUT FORMAT (JSON only, no other text):
 # Main compose function
 # ---------------------------------------------------------------------------
 
-def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None = None) -> dict:
+async def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None = None) -> dict:
     """
     Core composition function.
     Inputs are plain dicts loaded from the dataset JSON.
@@ -535,7 +535,7 @@ IMPORTANT: send_as should be "{send_as}" based on trigger scope.
 
 Return ONLY the JSON object. Do not include your reasoning in the final JSON, only use it to inform the 'body' and 'rationale'."""
 
-    raw = call_llm(SYSTEM_PROMPT, user_prompt)
+    raw = await call_llm(SYSTEM_PROMPT, user_prompt)
 
     # Parse and validate
     result = _parse_and_validate(raw, trigger, send_as)

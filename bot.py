@@ -204,8 +204,8 @@ async def tick(body: TickBody):
     candidates.sort(key=lambda x: x[0], reverse=True)
     candidates = candidates[:20]
 
-    # --- 2. Compose and emit actions ---
-    for _, trg_id, bundle in candidates:
+    # --- 2. Define task for parallel execution ---
+    async def process_trigger(bundle):
         trigger = bundle["trigger"]
         merchant = bundle["merchant"]
         category = bundle["category"]
@@ -213,59 +213,61 @@ async def tick(body: TickBody):
 
         merchant_id = trigger.get("merchant_id", "")
         customer_id = trigger.get("customer_id")
+        conv_id = f"conv_{merchant_id}_{trigger['id']}"
 
-        # Generate a stable conversation ID
-        conv_id = f"conv_{merchant_id}_{trg_id}"
-
-        # Skip if this conversation already ended
         if conv_manager.is_ended(conv_id):
-            continue
+            return None
 
         try:
-            composed = compose(category or {}, merchant, trigger, customer)
+            composed = await compose(category or {}, merchant, trigger, customer)
+            body_text = composed.get("body", "").strip()
+            if not body_text:
+                return None
+            
+            if conv_manager.is_duplicate_body(conv_id, body_text):
+                return None
+
+            # Record turn
+            conv_manager.get_or_create(conv_id, merchant_id, customer_id)
+            conv_manager.add_bot_turn(conv_id, body_text, composed.get("cta", ""))
+
+            # Suppress key
+            suppression_key = trigger.get("suppression_key", "")
+            if suppression_key:
+                conv_manager.suppress(suppression_key)
+            
+            # Mark acted
+            _acted_triggers.add(f"{merchant_id}:{trigger['id']}")
+
+            # Build template params
+            owner_name = merchant.get("identity", {}).get("owner_first_name", "") or merchant.get("identity", {}).get("name", "")
+            body_excerpt = body_text[:100]
+            cta_hint = "Reply YES to continue" if composed.get("cta") == "binary_yes_no" else "Reply to continue"
+
+            return {
+                "conversation_id": conv_id,
+                "merchant_id": merchant_id,
+                "customer_id": customer_id,
+                "send_as": composed.get("send_as", "vera"),
+                "trigger_id": trigger["id"],
+                "template_name": f"vera_{trigger.get('kind', 'generic')}_v1",
+                "template_params": [owner_name, body_excerpt, cta_hint],
+                "body": body_text,
+                "cta": composed.get("cta", "open_ended"),
+                "suppression_key": suppression_key,
+                "rationale": composed.get("rationale", ""),
+            }
         except Exception as e:
-            print(f"[COMPOSE ERROR] {trg_id}: {e}")
-            continue
+            print(f"[COMPOSE ERROR] {trigger['id']}: {e}")
+            return None
 
-        body_text = composed.get("body", "").strip()
-        if not body_text:
-            continue
-
-        # Anti-repetition: don't send the same body we sent before in this conv
-        if conv_manager.is_duplicate_body(conv_id, body_text):
-            continue
-
-        # Record the turn
-        conv_manager.get_or_create(conv_id, merchant_id, customer_id)
-        conv_manager.add_bot_turn(conv_id, body_text, composed.get("cta", ""))
-
-        # Suppress this key globally
-        suppression_key = trigger.get("suppression_key", "")
-        if suppression_key:
-            conv_manager.suppress(suppression_key)
-
-        # Mark trigger as acted
-        act_key = f"{merchant_id}:{trg_id}"
-        _acted_triggers.add(act_key)
-
-        # Build template params (basic — 3 slots: name, body excerpt, cta hint)
-        owner_name = merchant.get("identity", {}).get("owner_first_name", "") or merchant.get("identity", {}).get("name", "")
-        body_excerpt = body_text[:100]
-        cta_hint = "Reply YES to continue" if composed.get("cta") == "binary_yes_no" else "Reply to continue"
-
-        actions.append({
-            "conversation_id": conv_id,
-            "merchant_id": merchant_id,
-            "customer_id": customer_id,
-            "send_as": composed.get("send_as", "vera"),
-            "trigger_id": trg_id,
-            "template_name": f"vera_{trigger.get('kind', 'generic')}_v1",
-            "template_params": [owner_name, body_excerpt, cta_hint],
-            "body": body_text,
-            "cta": composed.get("cta", "open_ended"),
-            "suppression_key": suppression_key,
-            "rationale": composed.get("rationale", ""),
-        })
+    # --- 3. Execute in parallel ---
+    import asyncio
+    tasks = [process_trigger(bundle) for _, _, bundle in candidates]
+    results = await asyncio.gather(*tasks)
+    
+    # Filter out None results
+    actions = [r for r in results if r is not None]
 
     return {"actions": actions}
 
