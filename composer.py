@@ -435,6 +435,8 @@ ABSOLUTE RULES (violating any = score of 0):
 4. ONE primary CTA at the very end of the message. NOT in the middle.
 5. Never re-introduce yourself after turn 1.
 6. ANCHORING: Always cross-reference the primary trigger with at least one other Merchant Signal (e.g., stale posts, low CTR, high lapse rate) to make the message feel "why me" and "why now".
+7. SOCIAL PROOF STRICTNESS: ONLY use social proof if you can directly quote an exact number from the provided `peer_stats` block. DO NOT invent or estimate peer data.
+8. CURIOSITY CTA: When the trigger does not require a strict YES/NO action, end the message with an open-ended, curiosity-driven question to encourage a reply.
 
 VOICE RULES BY CATEGORY:
 - dentists: peer_clinical — technical vocabulary OK (fluoride varnish, caries, OPG). Taboo: "guaranteed", "100% safe". Address as "Dr. {FirstName}".
@@ -490,7 +492,9 @@ def compose(category: dict, merchant: dict, trigger: dict, customer: dict | None
 1. IDENTIFY relevant facts from the Category/Merchant context.
 2. ANCHOR the primary Trigger to at least one other Signal or performance metric.
 3. Quantify Loss Aversion if applicable.
-4. COMPOSE the message following the Category Voice and Absolute Rules.
+4. Extract EXACT `peer_stats` numbers if using the Social Proof lever.
+5. Determine if a Curiosity question is appropriate for the CTA.
+6. COMPOSE the message following the Category Voice and Absolute Rules.
 
 COMPOSE A MESSAGE using this strategy: {strategy}
 Strategy guidance: {strategy_hint}
